@@ -1,0 +1,46 @@
+#1.Concataning all the samples
+
+cat Trim_control1_1.fastq Trim_control2_1.fastq Trim_treated1_1.fastq Trim_treated2_1.fastq >> left.fastq
+cat Trim_control1_2.fastq Trim_control2_2.fastq Trim_treated1_2.fastq Trim_treated2_2.fastq >> right.fastq
+
+#2.conversion of fastq into fasta 
+
+paste - - - - < left.fastq | cut -f 1,2 | sed 's/^@/>/' | tr "\t" "\n" > left.fasta
+paste - - - - < right.fastq | cut -f 1,2 | sed 's/^@/>/' | tr "\t" "\n" > right.fasta
+
+#3.Assembly creation using trinity
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/Trinity --seqType fa --left left.fasta --right right.fasta --max_memory 6G --CPU 2 --output Trinity_output
+
+#4 To calculate the assembly-statistics using assembly-stats
+assembly-stats /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/Trinity.fasta > Assembly_Statistics.txt
+
+# Abundance estimation using RSEM:
+# control1:
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/util/align_and_estimate_abundance.pl --seqType fq --transcripts /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/Trinity.fasta --left Trim_control1_1.fastq --right Trim_control1_2.fastq --est_method RSEM --aln_method bowtie --trinity_mode --prep_reference --output_dir /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_control1
+
+# control1:
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/util/align_and_estimate_abundance.pl --seqType fq --transcripts /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/Trinity.fasta --left Trim_control2_1.fastq --right Trim_control2_2.fastq --est_method RSEM --aln_method bowtie --trinity_mode --prep_reference --output_dir /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_control2
+
+#treated1
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/util/align_and_estimate_abundance.pl --seqType fq --transcripts /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/Trinity.fasta --left Trim_treated1_1.fastq --right Trim_treated1_2.fastq --est_method RSEM --aln_method bowtie --trinity_mode --prep_reference --output_dir /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_treated1
+
+#treated2
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/util/align_and_estimate_abundance.pl --seqType fq --transcripts /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/Trinity.fasta --left Trim_treated2_1.fastq --right Trim_treated2_2.fastq --est_method RSEM --aln_method bowtie --trinity_mode --prep_reference --output_dir /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_treated2
+
+#generate countmatrix using edgeR
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/util/abundance_estimates_to_matrix.pl --est_method RSEM --out_prefix abundance_count --gene_trans_map 'none' --name_sample_by_basedir /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_control1/RSEM.isoforms.results /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_control2/RSEM.isoforms.results /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_Treated1/RSEM.isoforms.results /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/RSEM_Treated2/RSEM.isoforms.results
+
+#differential expression analysis
+/mnt/d/DrOmicsClass/TOOLS/Trinityrnaseq-v2.6.6.wExtSampleData/Trinityrnaseq-v2.6.6/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/abundance_count.isoform.counts.matrix --method edgeR --samples_file analysis_plan.txt --dispersion 0.1 --output edgeR_dir
+
+#Identification of coding region in our data using Transdecoder:
+/mnt/d/DrOmicsClass/TOOLS/TransDecoder-master/TransDecoder.LongOrfs -t /mnt/d/DrOmicsClass/7RNAseq/Dnovo_Seq/DeMo/Trinity_output/Trinity.fasta
+
+#creation 0f refrence database
+makeblastdb -in uniprot_sprot.fasta -dbtype prot -out uniprodb
+
+#mapping of query with refrence
+blastp -query longest_orfs.pep -db uniprodb -num_alignments 1 -num_threads 2 -outfmt "6 qseqid sseqid pident length mismatch gaps qstart qend sstart send evalue bitscore qlen" -out result.txt
+
+#%Query_coverage = (exact_match/Qlength)*100
+#Exact match = length-mismatch-gaps
